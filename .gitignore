@@ -1,0 +1,18 @@
+# dispatch output / scratch
+dispatch-out/
+demo-out/
+out/
+*.local.json
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

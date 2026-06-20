@@ -1,0 +1,15 @@
+{
+  "_comment": "Defaults for local-dispatch. CLI flags override these. Model is chosen by ranking your INSTALLED models for the given --role; you rarely need to hard-code one.",
+  "backend": "auto",
+  "model": null,
+  "role": "coding",
+  "max_retries": 4,
+  "verify_timeout": 120,
+  "temperature": 0.2,
+  "role_hints": {
+    "coding": ["coder", "code", "codestral", "deepseek-coder", "starcoder", "codellama"],
+    "reasoning": ["reasoning", "thinking", "-r1", "deepseek-r1", "qwq", "reasoner"],
+    "general": []
+  },
+  "exclude_hints": ["embed", "embedding", "rerank", "whisper", "tts", "clip"]
+}

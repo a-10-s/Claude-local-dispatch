@@ -79,6 +79,15 @@ Why JSON instead of parsing markdown code fences?
 `select_model()` returns the explicit `--model` if given, else the top-ranked model
 for the role, else the first available.
 
+## Token-savings report
+
+`chat()` returns `(content, usage)`. The loop accumulates `prompt_tokens` /
+`completion_tokens` across every attempt. `build_report()` converts the totals into an
+estimated Claude cost avoided using configurable `--price-in` / `--price-out` rates
+($/Mtok). When a backend reports real `usage`, the counts are exact (`estimated:false`);
+otherwise a `chars/4` fallback is used and flagged. The `report` is attached to both the
+`done` and `gave_up` summaries, so it also flows through the MCP `dispatch` tool unchanged.
+
 ## Safety
 
 - **Path-escape guard**: `write_files()` normalizes each path and refuses anything

@@ -6,6 +6,9 @@
   "max_retries": 4,
   "verify_timeout": 120,
   "temperature": 0.2,
+  "_pricing_comment": "USD per 1M tokens, used only to ESTIMATE the Claude cost avoided by running locally. Override with --price-in/--price-out to match your model/plan.",
+  "price_in_per_mtok": 3.0,
+  "price_out_per_mtok": 15.0,
   "role_hints": {
     "coding": ["coder", "code", "codestral", "deepseek-coder", "starcoder", "codellama"],
     "reasoning": ["reasoning", "thinking", "-r1", "deepseek-r1", "qwq", "reasoner"],

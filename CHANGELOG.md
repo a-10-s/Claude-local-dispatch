@@ -5,6 +5,10 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 ### Added
+- **Token-savings report** — every dispatch returns a `report` with tokens that ran
+  locally (real `usage` counts when the backend provides them, else a chars/4 estimate)
+  and an estimated Claude cost avoided. New `--price-in` / `--price-out` flags and
+  `price_*_per_mtok` config defaults.
 - **MCP server mode** (`mcp_server.py`) — exposes `dispatch` and `list_models` as
   native Claude tools over stdio JSON-RPC. Pure standard library, no `pip install`.
 - `.mcp.json.example` and `docs/MCP.md` registration guide.

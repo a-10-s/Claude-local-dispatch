@@ -158,7 +158,12 @@ Rules:
 """
 
 
-def chat(backend: dict, model: str, messages: list[dict], temperature: float) -> str:
+def chat(backend: dict, model: str, messages: list[dict], temperature: float) -> tuple[str, dict]:
+    """Return (content, usage). usage has prompt/completion/total token counts.
+
+    Backends that omit `usage` (some Ollama builds) get a chars/4 estimate so the
+    savings report still works; estimated flag is recorded.
+    """
     payload = {
         "model": model,
         "messages": messages,
@@ -166,7 +171,25 @@ def chat(backend: dict, model: str, messages: list[dict], temperature: float) ->
         "stream": False,
     }
     resp = _http_json(backend["base"] + "/chat/completions", payload)
-    return resp["choices"][0]["message"]["content"]
+    content = resp["choices"][0]["message"]["content"]
+    usage = resp.get("usage") or {}
+    if usage.get("total_tokens"):
+        usage = {
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "estimated": False,
+        }
+    else:
+        # Fallback estimate: ~4 chars per token.
+        prompt_chars = sum(len(m.get("content", "")) for m in messages)
+        usage = {
+            "prompt_tokens": prompt_chars // 4,
+            "completion_tokens": len(content) // 4,
+            "total_tokens": (prompt_chars + len(content)) // 4,
+            "estimated": True,
+        }
+    return content, usage
 
 
 def parse_model_json(text: str) -> dict:
@@ -208,6 +231,33 @@ def run_verify(cmd: str, workdir: str, timeout: int) -> tuple[bool, str]:
 
 
 # --------------------------------------------------------------------------- #
+# Token-savings report
+# --------------------------------------------------------------------------- #
+# Default Claude pricing (USD per 1M tokens) used to estimate cost AVOIDED by
+# running locally. These are estimates for illustration — override via CLI flags
+# or config to match your actual model/plan.
+DEFAULT_PRICE_IN = 3.0    # $/Mtok input  (Sonnet-class default)
+DEFAULT_PRICE_OUT = 15.0  # $/Mtok output (Sonnet-class default)
+
+
+def build_report(usage_total: dict, price_in: float, price_out: float) -> dict:
+    """Estimate tokens processed locally and the Claude cost that was avoided."""
+    pin = usage_total.get("prompt_tokens", 0)
+    pout = usage_total.get("completion_tokens", 0)
+    cost_avoided = (pin / 1_000_000) * price_in + (pout / 1_000_000) * price_out
+    return {
+        "local_prompt_tokens": pin,
+        "local_completion_tokens": pout,
+        "local_total_tokens": usage_total.get("total_tokens", pin + pout),
+        "estimated_token_counts": usage_total.get("estimated", False),
+        "est_claude_cost_avoided_usd": round(cost_avoided, 4),
+        "price_basis": {"input_per_mtok": price_in, "output_per_mtok": price_out},
+        "note": "Cost is an ESTIMATE of what these tokens would have cost on Claude. "
+                "Tokens ran locally for $0 of API spend.",
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Main loop
 # --------------------------------------------------------------------------- #
 def dispatch(task: str, args) -> dict:
@@ -223,11 +273,24 @@ def dispatch(task: str, args) -> dict:
         {"role": "user", "content": task},
     ]
 
+    usage_total = {"prompt_tokens": 0, "completion_tokens": 0,
+                   "total_tokens": 0, "estimated": False}
+
+    def add_usage(u: dict) -> None:
+        usage_total["prompt_tokens"] += u.get("prompt_tokens", 0)
+        usage_total["completion_tokens"] += u.get("completion_tokens", 0)
+        usage_total["total_tokens"] += u.get("total_tokens", 0)
+        usage_total["estimated"] = usage_total["estimated"] or u.get("estimated", False)
+
+    price_in = getattr(args, "price_in", DEFAULT_PRICE_IN)
+    price_out = getattr(args, "price_out", DEFAULT_PRICE_OUT)
+
     history = []
     for attempt in range(1, args.max_retries + 1):
         log(f"attempt {attempt}/{args.max_retries} — asking local model...")
         t0 = time.time()
-        raw = chat(backend, model, messages, args.temperature)
+        raw, usage = chat(backend, model, messages, args.temperature)
+        add_usage(usage)
         try:
             step = parse_model_json(raw)
         except Exception as e:
@@ -254,9 +317,13 @@ def dispatch(task: str, args) -> dict:
         })
 
         if step.get("done") and verify_ok:
+            report = build_report(usage_total, price_in, price_out)
+            log(f"DONE — {report['local_total_tokens']} tokens ran locally "
+                f"(~${report['est_claude_cost_avoided_usd']} Claude cost avoided)")
             return {"status": "done", "attempts": attempt, "model": model,
                     "backend": backend["name"], "files": [f["path"] for f in files],
-                    "notes": step.get("notes", ""), "history": history}
+                    "notes": step.get("notes", ""), "history": history,
+                    "report": report}
 
         # Feed the failure / incompleteness back for the next attempt.
         feedback = []
@@ -267,9 +334,12 @@ def dispatch(task: str, args) -> dict:
         messages.append({"role": "assistant", "content": raw})
         messages.append({"role": "user", "content": "\n".join(feedback)})
 
+    report = build_report(usage_total, price_in, price_out)
+    log(f"GAVE UP — {report['local_total_tokens']} tokens ran locally "
+        f"(~${report['est_claude_cost_avoided_usd']} Claude cost avoided)")
     return {"status": "gave_up", "attempts": args.max_retries, "model": model,
             "backend": backend["name"], "notes": "Max retries reached.",
-            "history": history}
+            "history": history, "report": report}
 
 
 def main():
@@ -286,6 +356,10 @@ def main():
     p.add_argument("--max-retries", type=int, default=4)
     p.add_argument("--verify-timeout", type=int, default=120)
     p.add_argument("--temperature", type=float, default=0.2)
+    p.add_argument("--price-in", type=float, default=DEFAULT_PRICE_IN,
+                   help=f"Claude input price $/Mtok for the savings estimate (default {DEFAULT_PRICE_IN}).")
+    p.add_argument("--price-out", type=float, default=DEFAULT_PRICE_OUT,
+                   help=f"Claude output price $/Mtok for the savings estimate (default {DEFAULT_PRICE_OUT}).")
     p.add_argument("--dry-run", action="store_true", help="Don't write files or run verify.")
     args = p.parse_args()
 

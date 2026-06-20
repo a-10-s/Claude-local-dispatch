@@ -82,6 +82,7 @@ The trick this tool uses: **the entire iterative loop runs inside a local Python
 - 🛠️ **Native MCP server** — expose `dispatch` + `list_models` as native Claude tools (still **zero dependencies** — MCP over stdio, no SDK).
 - 🖥️ **Works standalone too** — use it as a plain CLI with no Claude at all.
 - 🔒 **Path-escape guard** — generated files can't be written outside your `--workdir`.
+- 💰 **Token-savings report** — every run reports how many tokens ran locally and an estimate of the Claude cost avoided (uses the model's real `usage` counts when available).
 - 📊 **Machine-readable output** — the last stdout line is always a JSON summary; exit `0` = done, `1` = gave up.
 
 ## 📋 Requirements
@@ -146,6 +147,7 @@ python dispatch.py "build a todo API" --dry-run
 | `--max-retries` | `4` | Local fix-up loops before giving up |
 | `--verify-timeout` | `120` | Seconds allowed for the verify command |
 | `--temperature` | `0.2` | Sampling temperature |
+| `--price-in` / `--price-out` | `3` / `15` | Claude $/Mtok used for the savings estimate |
 | `--dry-run` | off | Don't write files or run verify |
 | `--list-models` | — | List installed models ranked for `--role`, then exit |
 
@@ -192,6 +194,31 @@ Claude Code, and check `/mcp`. Then just say *"dispatch this to my local model"*
 
 Full guide: [docs/MCP.md](docs/MCP.md). Skill vs MCP comparison included.
 
+## 💰 Token-savings report
+
+Every dispatch returns a `report` showing how much work stayed off Claude's bill:
+
+```jsonc
+"report": {
+  "local_prompt_tokens": 230,
+  "local_completion_tokens": 185,
+  "local_total_tokens": 415,
+  "estimated_token_counts": false,        // false = real usage from the backend
+  "est_claude_cost_avoided_usd": 0.0035,  // estimate at the configured rate
+  "price_basis": { "input_per_mtok": 3.0, "output_per_mtok": 15.0 }
+}
+```
+
+- Uses the model's **real `usage` counts** when the backend reports them (LM Studio and
+  most Ollama builds do); falls back to a `chars/4` estimate otherwise (flagged).
+- The dollar figure is an **estimate** of what those tokens *would* have cost on Claude —
+  they actually ran locally for **$0** of API spend. Tune the basis to your model/plan:
+  ```bash
+  python dispatch.py "<job>" --price-in 15 --price-out 75   # e.g. Opus-class rates
+  ```
+- Small jobs save pennies; a long multi-retry job that would have chewed through Claude's
+  context is where it adds up.
+
 ## 🏗 How it works (architecture)
 
 ```
@@ -226,7 +253,7 @@ The local model is forced to answer in **strict JSON** (`files`, `verify`, `done
 Contributions welcome on any of these — they turn this from a neat trick into a **serious token optimizer**:
 
 - [x] ~~**MCP server mode** — expose dispatch as a native Claude tool (no Bash hop).~~ ✅ shipped — see [docs/MCP.md](docs/MCP.md)
-- [ ] **Token-savings report** — estimate tokens (and $) saved per dispatch.
+- [x] ~~**Token-savings report** — estimate tokens (and $) saved per dispatch.~~ ✅ shipped — every run includes a `report`.
 - [ ] **Context injection** — pass existing project files to the local model for refactors.
 - [ ] **Task decomposition** — split a big job into sub-jobs, each dispatched separately.
 - [ ] **Ollama auto-pull** — fetch a recommended model if none suitable is installed.

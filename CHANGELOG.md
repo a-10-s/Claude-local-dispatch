@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+### Added
+- **MCP server mode** (`mcp_server.py`) — exposes `dispatch` and `list_models` as
+  native Claude tools over stdio JSON-RPC. Pure standard library, no `pip install`.
+- `.mcp.json.example` and `docs/MCP.md` registration guide.
+- `tests/mcp_smoke_test.py` — drives the server over a pipe (handshake, tools/list,
+  live tools/call).
+
 ## [0.1.0] — initial release
 ### Added
 - `dispatch.py` — zero-dependency CLI that delegates coding jobs to a local LLM.

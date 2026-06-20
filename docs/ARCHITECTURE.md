@@ -25,6 +25,7 @@ Everything between those two points is free local compute.
 | `dispatch.py` | The worker: detect backend → rank/pick model → loop (generate, write, verify, retry) → emit JSON summary. |
 | `config.json` | Defaults and role/exclude hint lists (documentation + future config loading). |
 | `skills/local-dispatch/SKILL.md` | Teaches Claude Code *how to delegate and review* instead of doing the work itself. |
+| `mcp_server.py` | Optional MCP server (stdio, pure stdlib) exposing `dispatch` + `list_models` as native Claude tools. Reuses `dispatch.py`. See [MCP.md](MCP.md). |
 
 ## The loop
 
@@ -89,5 +90,6 @@ for the role, else the first available.
 
 - **New backend**: add an entry to `BACKENDS` with a `base` and `probe` URL.
 - **New role**: add hints to `ROLE_HINTS`.
-- **MCP mode** (roadmap): wrap `dispatch()` in an MCP server so Claude calls it as a
-  native tool instead of via the skill + Bash.
+- **MCP mode** (shipped): `mcp_server.py` wraps `dispatch()` in a stdio JSON-RPC MCP
+  server so Claude calls it as a native tool instead of via the skill + Bash. Pure
+  stdlib — no SDK. See [MCP.md](MCP.md).

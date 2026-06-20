@@ -4,6 +4,9 @@ demo-out/
 out/
 *.local.json
 
+# local MCP registration (keep .mcp.json.example, ignore the real one)
+.mcp.json
+
 # python
 __pycache__/
 *.py[cod]

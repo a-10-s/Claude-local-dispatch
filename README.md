@@ -37,6 +37,7 @@ Claude reviews ONE short summary  ✅  (a few tokens, not thousands)
 - [Install](#-install)
 - [Usage](#-usage)
 - [Smart model selection](#-smart-model-selection)
+- [MCP mode (native tool)](#-mcp-mode--claude-calls-it-as-a-native-tool)
 - [How it works](#-how-it-works-architecture)
 - [Honest limitations](#-honest-limitations)
 - [Roadmap](#-roadmap--ideas)
@@ -78,6 +79,7 @@ The trick this tool uses: **the entire iterative loop runs inside a local Python
 - ♻️ **Self-correcting loop** — writes files, runs your verify command (tests/build/lint), feeds failures back to the local model, and retries.
 - 📦 **Zero dependencies** — pure Python standard library. No `pip install`. Single file.
 - 🧩 **Claude Code skill included** — type `/local-dispatch "<job>"` and Claude orchestrates.
+- 🛠️ **Native MCP server** — expose `dispatch` + `list_models` as native Claude tools (still **zero dependencies** — MCP over stdio, no SDK).
 - 🖥️ **Works standalone too** — use it as a plain CLI with no Claude at all.
 - 🔒 **Path-escape guard** — generated files can't be written outside your `--workdir`.
 - 📊 **Machine-readable output** — the last stdout line is always a JSON summary; exit `0` = done, `1` = gave up.
@@ -169,6 +171,27 @@ $ python dispatch.py --list-models --role coding
 
 Claude (or you) just says *“this is a coding job”* and the right local model is chosen automatically. Override anytime with `--model`.
 
+## 🛠 MCP mode — Claude calls it as a native tool
+
+Prefer the lowest-overhead path? Run the included **MCP server** and Claude calls
+`dispatch` / `list_models` as **native tools** — no skill + Bash hop. Still pure
+standard library, **no `pip install`**.
+
+```bash
+# Register with Claude Code (CLI)
+claude mcp add local-dispatch -- python /absolute/path/to/Claude-local-dispatch/mcp_server.py
+```
+
+Or copy [`.mcp.json.example`](.mcp.json.example) → `.mcp.json`, set the path, restart
+Claude Code, and check `/mcp`. Then just say *"dispatch this to my local model"*.
+
+| Tool | Args | Returns |
+|------|------|---------|
+| `dispatch` | `task` (req), `role`, `workdir`, `max_retries`, `backend`, `model`, `dry_run` | JSON summary (`status`, files, history) |
+| `list_models` | `role`, `backend` | ranked installed models for the role |
+
+Full guide: [docs/MCP.md](docs/MCP.md). Skill vs MCP comparison included.
+
 ## 🏗 How it works (architecture)
 
 ```
@@ -202,8 +225,8 @@ The local model is forced to answer in **strict JSON** (`files`, `verify`, `done
 
 Contributions welcome on any of these — they turn this from a neat trick into a **serious token optimizer**:
 
+- [x] ~~**MCP server mode** — expose dispatch as a native Claude tool (no Bash hop).~~ ✅ shipped — see [docs/MCP.md](docs/MCP.md)
 - [ ] **Token-savings report** — estimate tokens (and $) saved per dispatch.
-- [ ] **MCP server mode** — expose dispatch as a native Claude tool (no Bash hop).
 - [ ] **Context injection** — pass existing project files to the local model for refactors.
 - [ ] **Task decomposition** — split a big job into sub-jobs, each dispatched separately.
 - [ ] **Ollama auto-pull** — fetch a recommended model if none suitable is installed.

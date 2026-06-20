@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy to .mcp.json (project) or merge into ~/.claude.json (global), then edit the path. Restart Claude Code to load. The 'dispatch' and 'list_models' tools will appear as native MCP tools.",
+  "mcpServers": {
+    "local-dispatch": {
+      "command": "python",
+      "args": ["/ABSOLUTE/PATH/TO/Claude-local-dispatch/mcp_server.py"]
+    }
+  }
+}

@@ -12,8 +12,15 @@
 [![Works with Claude Code](https://img.shields.io/badge/Claude%20Code-skill-8A2BE2.svg)](https://docs.claude.com/en/docs/claude-code)
 [![Ollama](https://img.shields.io/badge/Ollama-supported-black.svg)](https://ollama.com)
 [![LM Studio](https://img.shields.io/badge/LM%20Studio-supported-black.svg)](https://lmstudio.ai)
+[![Built by a local model](https://img.shields.io/badge/features%20%233%E2%80%938-built%20by%20a%20local%20model-orange.svg)](docs/FEATURES.md)
 
 </div>
+
+---
+
+> 🤖 **Dogfooded to the extreme:** features #3–#8 on the roadmap were *written by a local model*
+> (`qwen3-coder-30b` on LM Studio) **using this very tool** — `local-dispatch` building `local-dispatch`.
+> Claude only planned, reviewed, and fixed the wiring. See [docs/FEATURES.md](docs/FEATURES.md).
 
 ---
 

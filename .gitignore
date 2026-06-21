@@ -2,7 +2,13 @@
 dispatch-out/
 demo-out/
 out/
+roadmap-build/
+ctxtest/
+demo-decomp/
 *.local.json
+
+# result cache (#6)
+.dispatch-cache/
 
 # local MCP registration (keep .mcp.json.example, ignore the real one)
 .mcp.json

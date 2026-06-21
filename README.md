@@ -148,6 +148,12 @@ python dispatch.py "build a todo API" --dry-run
 | `--verify-timeout` | `120` | Seconds allowed for the verify command |
 | `--temperature` | `0.2` | Sampling temperature |
 | `--price-in` / `--price-out` | `3` / `15` | Claude $/Mtok used for the savings estimate |
+| `--context` | — | Comma-separated files/globs to inject so the model can edit/refactor them |
+| `--cache` | off | Reuse a stored result for an identical task+model+role |
+| `--auto-verify` | off | Auto-pick a verify command if the model supplies none |
+| `--pull-if-missing` | off | On Ollama, pull the chosen model if it isn't installed |
+| `--decompose` | off | Split the task into sub-tasks and dispatch each in order |
+| `--vote` | — | Comma-separated models; pick the best for the task, then dispatch |
 | `--dry-run` | off | Don't write files or run verify |
 | `--list-models` | — | List installed models ranked for `--role`, then exit |
 
@@ -250,16 +256,19 @@ The local model is forced to answer in **strict JSON** (`files`, `verify`, `done
 
 ## 🗺 Roadmap / ideas
 
-Contributions welcome on any of these — they turn this from a neat trick into a **serious token optimizer**:
+**All roadmap items are now shipped** 🎉 (and features #3–#8 were themselves
+written by a local model via this very tool — see [docs/FEATURES.md](docs/FEATURES.md)):
 
-- [x] ~~**MCP server mode** — expose dispatch as a native Claude tool (no Bash hop).~~ ✅ shipped — see [docs/MCP.md](docs/MCP.md)
-- [x] ~~**Token-savings report** — estimate tokens (and $) saved per dispatch.~~ ✅ shipped — every run includes a `report`.
-- [ ] **Context injection** — pass existing project files to the local model for refactors.
-- [ ] **Task decomposition** — split a big job into sub-jobs, each dispatched separately.
-- [ ] **Ollama auto-pull** — fetch a recommended model if none suitable is installed.
-- [ ] **Result cache** — skip re-running identical jobs.
-- [ ] **Multi-model voting** — run 2 local models, let Claude pick the better output.
-- [ ] **Per-language verify presets** — auto-pick `pytest` / `npm test` / `cargo test`.
+- [x] **MCP server mode** — native Claude tool, no Bash hop. → [docs/MCP.md](docs/MCP.md)
+- [x] **Token-savings report** — every run includes a `report`.
+- [x] **Context injection** (`--context`) — pass existing files so the model can edit/refactor them.
+- [x] **Task decomposition** (`--decompose`) — split a big job into ordered sub-jobs, dispatch each.
+- [x] **Ollama auto-pull** (`--pull-if-missing`) — fetch the model if it isn't installed.
+- [x] **Result cache** (`--cache`) — instant reuse of identical task+model+role results.
+- [x] **Multi-model voting** (`--vote a,b`) — pick the best model for the task before dispatching.
+- [x] **Per-language verify presets** (`--auto-verify`) — auto-pick `pytest`/`npm test`/`cargo test`/`go test`.
+
+Next ideas welcome: streaming progress, a token-savings dashboard, more backends (vLLM, llama.cpp server).
 
 ## ❓ FAQ
 

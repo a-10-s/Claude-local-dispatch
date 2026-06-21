@@ -17,6 +17,7 @@ The last line of stdout is always a JSON summary (machine-readable).
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import subprocess
@@ -24,6 +25,20 @@ import sys
 import time
 import urllib.request
 import urllib.error
+
+# Optional feature modules (implemented by the local model itself; see roadmap).
+# Degrade gracefully if any are missing so the core dispatcher always runs.
+try:
+    import presets as _presets
+    import cache as _cache
+    import context as _context
+    import pull as _pull
+    import decompose as _decompose
+    import voting as _voting
+    _FEATURES = True
+except Exception:  # pragma: no cover - optional extras
+    _presets = _cache = _context = _pull = _decompose = _voting = None
+    _FEATURES = False
 
 # --------------------------------------------------------------------------- #
 # Backend auto-detection
@@ -268,9 +283,47 @@ def dispatch(task: str, args) -> dict:
     log(f"backend = {backend['name']}  role = {args.role}  model = {model}")
     os.makedirs(args.workdir, exist_ok=True)
 
+    # #8 Ollama auto-pull: fetch the model if it's missing on an Ollama backend.
+    if getattr(args, "pull_if_missing", False) and _FEATURES and "ollama" in backend["name"].lower():
+        log(f"ensuring Ollama model present: {model}")
+        _pull.ensure_ollama_model(model)
+
+    # #6 Result cache: return a stored result for an identical (task, model, role).
+    cache_key = None
+    if getattr(args, "cache", False) and _FEATURES:
+        cache_key = _cache.cache_key(task, model, args.role)
+        hit = _cache.get_cached(cache_key)
+        if hit:
+            log("cache HIT — returning stored result (0 new tokens)")
+            hit["cached"] = True
+            return hit
+
+    # #3 Context injection: prepend existing project files so the model can edit them.
+    user_content = task
+    if getattr(args, "context", None) and _FEATURES:
+        real_paths = []
+        for pat in str(args.context).split(","):
+            pat = pat.strip()
+            # Resolve relative to the workdir first (files live in the project dir),
+            # then fall back to the current directory.
+            matches = glob.glob(os.path.join(args.workdir, pat), recursive=True) \
+                or glob.glob(pat, recursive=True)
+            real_paths.extend(m for m in matches if os.path.isfile(m))
+        ctx_block = _context.build_context_block(real_paths)
+        if ctx_block:
+            # Relabel markers to paths relative to the workdir so the model returns
+            # paths that land in the right place (avoids workdir/workdir doubling).
+            for rp in real_paths:
+                rel = os.path.relpath(rp, args.workdir).replace("\\", "/")
+                ctx_block = ctx_block.replace(f"### FILE: {rp}", f"### FILE: {rel}")
+            log(f"injected context from {len(real_paths)} file(s)")
+            user_content = (f"{task}\n\nEXISTING PROJECT FILES (paths are relative to the "
+                            f"output dir; return the COMPLETE updated content using the SAME "
+                            f"path for any file you change):\n{ctx_block}")
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": task},
+        {"role": "user", "content": user_content},
     ]
 
     usage_total = {"prompt_tokens": 0, "completion_tokens": 0,
@@ -305,6 +358,11 @@ def dispatch(task: str, args) -> dict:
         log(f"wrote {len(written)} file(s) in {time.time()-t0:.1f}s — {step.get('notes','')[:80]}")
 
         verify_cmd = step.get("verify")
+        # #5 Verify presets: if the model gave no verify command, auto-detect one.
+        if not verify_cmd and not args.dry_run and getattr(args, "auto_verify", False) and _FEATURES:
+            verify_cmd = _presets.detect_verify_command(args.workdir)
+            if verify_cmd:
+                log(f"auto-verify preset: {verify_cmd}")
         verify_ok, verify_out = True, ""
         if verify_cmd and not args.dry_run:
             log(f"verify: {verify_cmd}")
@@ -320,10 +378,13 @@ def dispatch(task: str, args) -> dict:
             report = build_report(usage_total, price_in, price_out)
             log(f"DONE — {report['local_total_tokens']} tokens ran locally "
                 f"(~${report['est_claude_cost_avoided_usd']} Claude cost avoided)")
-            return {"status": "done", "attempts": attempt, "model": model,
-                    "backend": backend["name"], "files": [f["path"] for f in files],
-                    "notes": step.get("notes", ""), "history": history,
-                    "report": report}
+            result = {"status": "done", "attempts": attempt, "model": model,
+                      "backend": backend["name"], "files": [f["path"] for f in files],
+                      "notes": step.get("notes", ""), "history": history,
+                      "report": report}
+            if cache_key:  # #6 store successful result for reuse
+                _cache.put_cached(cache_key, result)
+            return result
 
         # Feed the failure / incompleteness back for the next attempt.
         feedback = []
@@ -361,6 +422,13 @@ def main():
     p.add_argument("--price-out", type=float, default=DEFAULT_PRICE_OUT,
                    help=f"Claude output price $/Mtok for the savings estimate (default {DEFAULT_PRICE_OUT}).")
     p.add_argument("--dry-run", action="store_true", help="Don't write files or run verify.")
+    # Roadmap features (graceful no-ops if the feature modules are absent):
+    p.add_argument("--context", help="#3 Comma-separated files/globs to inject as context for edits/refactors.")
+    p.add_argument("--cache", action="store_true", help="#6 Reuse a stored result for an identical task+model+role.")
+    p.add_argument("--auto-verify", action="store_true", help="#5 Auto-pick a verify command (pytest/npm/cargo/go) if the model gives none.")
+    p.add_argument("--pull-if-missing", action="store_true", help="#8 On an Ollama backend, pull the chosen model if it isn't installed.")
+    p.add_argument("--decompose", action="store_true", help="#4 Split the task into sub-tasks and dispatch each in order.")
+    p.add_argument("--vote", help="#7 Comma-separated models; pick the best for this task before dispatching.")
     args = p.parse_args()
 
     if args.list_models:
@@ -381,6 +449,33 @@ def main():
             task = fh.read()
     if not task:
         p.error("Provide a task string or --task-file.")
+
+    # #7 Multi-model voting: pick the best model for this task, then proceed with it.
+    if args.vote and _FEATURES:
+        backend = detect_backend(args.backend)
+        models = [m.strip() for m in args.vote.split(",") if m.strip()]
+        pick = _voting.pick_best(task, backend["base"], models)
+        if pick.get("best_model"):
+            print(f"[dispatch] vote winner: {pick['best_model']} "
+                  f"(score {pick.get('best_score')})", file=sys.stderr)
+            args.model = pick["best_model"]
+
+    # #4 Task decomposition: split into sub-tasks and dispatch each in order.
+    if args.decompose and _FEATURES:
+        backend = detect_backend(args.backend)
+        model = select_model(backend, args.role, args.model)
+        subtasks = _decompose.decompose_task(task, backend["base"], model)
+        print(f"[dispatch] decomposed into {len(subtasks)} sub-task(s)", file=sys.stderr)
+        results = []
+        for st in subtasks:
+            sub = f"{st.get('title', '')}: {st.get('description', '')}".strip(": ")
+            print(f"[dispatch] -> sub-task {st.get('id')}: {st.get('title')}", file=sys.stderr)
+            results.append(dispatch(sub or task, args))
+        status = "done" if results and all(r.get("status") == "done" for r in results) else "partial"
+        summary = {"status": status, "subtasks": len(results),
+                   "plan": subtasks, "results": results}
+        print(json.dumps(summary, indent=2))
+        sys.exit(0 if status == "done" else 1)
 
     result = dispatch(task, args)
     # Last stdout line is always the JSON summary (what Claude/you reviews).
